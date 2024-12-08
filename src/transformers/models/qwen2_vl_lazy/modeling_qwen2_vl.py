@@ -50,7 +50,7 @@ from ...utils import (
     replace_return_docstrings,
 )
 from .configuration_qwen2_vl import Qwen2VLConfig, Qwen2VLVisionConfig
-
+from .vt_samplers import UniformSampler
 
 if is_flash_attn_2_available():
     from flash_attn import flash_attn_varlen_func
@@ -830,6 +830,9 @@ QWEN2_VL_ATTENTION_CLASSES = {
     "sdpa": Qwen2VLSdpaAttention,
 }
 
+QWEN2_VL_SAMPLER_CLASSES = {
+    "random" : UniformSampler,
+}
 
 class Qwen2VLDecoderLayer(nn.Module):
     def __init__(self, config: Qwen2VLConfig, layer_idx: int):
@@ -1063,6 +1066,9 @@ class Qwen2VLModel(Qwen2VLPreTrainedModel):
         self.norm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.rotary_emb = Qwen2VLRotaryEmbedding(config=config)
 
+        self.sampler = QWEN2_VL_SAMPLER_CLASSES[config.selector_implementation](config)
+        self.selector_iter = config.selector_iter
+
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
         self.post_init()
@@ -1137,7 +1143,11 @@ class Qwen2VLModel(Qwen2VLPreTrainedModel):
         all_self_attns = () if output_attentions else None
         next_decoder_cache = None
 
-        for decoder_layer in self.layers:
+        for idx, decoder_layer in enumerate(self.layers):
+            if idx % self.selector_iter == 0:
+                hidden_states = self.sampler(hidden_states)
+                print(f'subsampled tokens at {idx}')
+
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
@@ -1166,7 +1176,7 @@ class Qwen2VLModel(Qwen2VLPreTrainedModel):
                 )
 
             hidden_states = layer_outputs[0]
-
+            
             if use_cache:
                 next_decoder_cache = layer_outputs[2 if output_attentions else 1]
 

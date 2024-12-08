@@ -17,3 +17,6 @@ class UniformSampler(Sampler):
     def sample(self, inputs):
         indices = np.random.choice(inputs.shape[0], size=int(inputs.shape[0] * self.retain_proportion), replace=False)
         return inputs[indices]
+    
+def a():
+    pass
